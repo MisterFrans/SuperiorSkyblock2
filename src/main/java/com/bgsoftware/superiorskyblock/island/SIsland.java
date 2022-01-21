@@ -97,6 +97,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -159,6 +160,8 @@ public final class SIsland implements Island {
     private final KeyMap<UpgradeValue<Integer>> entityLimits = new KeyMap<>();
     private final Map<PotionEffectType, UpgradeValue<Integer>> islandEffects = new ConcurrentHashMap<>();
     private final Map<PlayerRole, UpgradeValue<Integer>> roleLimits = new ConcurrentHashMap<>();
+    private KeyMap<AtomicInteger> softLimitCache = new KeyMap<>();
+    private long softLimitLastCount = 0L;
     /*
      * Island identifiers
      */
@@ -2109,6 +2112,36 @@ public final class SIsland implements Island {
     }
 
     @Override
+    public void addEntityForSoftLimitCount(EntityType entityType)
+    {
+        if(!plugin.getSettings().isSoftLimitEnabled())
+            return;
+
+        Key entityKey = Key.of(entityType);
+        int entityLimit = getEntityLimit(entityKey);
+
+        if (entityLimit <= IslandUtils.NO_LIMIT.get())
+            return;
+
+        softLimitCache.computeIfAbsent(entityKey, k -> new AtomicInteger(0)).incrementAndGet();
+    }
+
+    @Override
+    public void removeEntityForSoftLimitCount(EntityType entityType)
+    {
+        if(!plugin.getSettings().isSoftLimitEnabled())
+            return;
+
+        Key entityKey = Key.of(entityType);
+        int entityLimit = getEntityLimit(entityKey);
+
+        if (entityLimit <= IslandUtils.NO_LIMIT.get())
+            return;
+
+        softLimitCache.computeIfAbsent(entityKey, k -> new AtomicInteger(1)).decrementAndGet();
+    }
+
+    @Override
     public void clearEntitiesLimits() {
         PluginDebugger.debug("Action: Clear Entity Limit, Island: " + owner.getName());
         entityLimits.clear();
@@ -2152,35 +2185,79 @@ public final class SIsland implements Island {
     public CompletableFuture<Boolean> hasReachedEntityLimit(com.bgsoftware.superiorskyblock.api.key.Key key, int amount) {
         Preconditions.checkNotNull(key, "key parameter cannot be null.");
 
-        CompletableFutureList<Chunk> chunks = new CompletableFutureList<>();
         int entityLimit = getEntityLimit(key);
 
         if (entityLimit <= IslandUtils.NO_LIMIT.get())
             return CompletableFuture.completedFuture(false);
 
-        AtomicInteger amountOfEntities = new AtomicInteger(0);
 
-        for (World.Environment environment : World.Environment.values()) {
-            try {
-                chunks.addAll(getAllChunksAsync(environment, true, true, chunk ->
-                        amountOfEntities.set(amountOfEntities.get() + (int) Arrays.stream(chunk.getEntities())
-                                .filter(entity -> key.equals(EntityUtils.getLimitEntityType(entity)) &&
-                                        !EntityUtils.canBypassEntityLimit(entity)).count())));
-            } catch (Exception ignored) {
+        if(plugin.getSettings().isSoftLimitEnabled())
+        {
+            if(softLimitLastCount + plugin.getSettings().getDelayBetweenCountWithSoftLimit() * 1000L < System.currentTimeMillis())
+            {
+                softLimitLastCount = System.currentTimeMillis();
+                CompletableFutureList<Chunk> chunks = new CompletableFutureList<>();
+
+                KeyMap<AtomicInteger> tempSoftLimitCache = new KeyMap<>();
+
+                for (World.Environment environment : World.Environment.values()) {
+                    try {
+                        chunks.addAll(getAllChunksAsync(environment, true, true, chunk ->
+                                Arrays.stream(chunk.getEntities()).filter(entity -> !EntityUtils.canBypassEntityLimit(entity))
+                                        .filter(entity -> entityLimits.containsKey(Key.of(entity.getType())))
+                                        .forEach(entity -> tempSoftLimitCache.computeIfAbsent(Key.of(entity.getType()), key1 -> new AtomicInteger(0)).incrementAndGet())));
+
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                CompletableFuture<Boolean> completableFuture = new CompletableFuture<>();
+
+                Executor.async(() -> {
+                    //Waiting for all the chunks to load
+                    chunks.forEachCompleted(chunk -> {
+                    }, error -> {
+                    });
+                    softLimitCache = tempSoftLimitCache;
+
+                    completableFuture.complete(softLimitCache.computeIfAbsent(key, key1 -> new AtomicInteger(0)).get() > entityLimit);
+                });
+
+                return completableFuture;
+            }
+            else
+            {
+                return CompletableFuture.completedFuture(softLimitCache.computeIfAbsent(key, k -> new AtomicInteger(0)).get() + amount > entityLimit);
             }
         }
+        else
+        {
+            CompletableFutureList<Chunk> chunks = new CompletableFutureList<>();
 
-        CompletableFuture<Boolean> completableFuture = new CompletableFuture<>();
+            AtomicInteger amountOfEntities = new AtomicInteger(0);
 
-        Executor.async(() -> {
-            //Waiting for all the chunks to load
-            chunks.forEachCompleted(chunk -> {
-            }, error -> {
+            for (World.Environment environment : World.Environment.values()) {
+                try {
+                    chunks.addAll(getAllChunksAsync(environment, true, true, chunk ->
+                            amountOfEntities.set(amountOfEntities.get() + (int) Arrays.stream(chunk.getEntities())
+                                    .filter(entity -> key.equals(EntityUtils.getLimitEntityType(entity)) &&
+                                            !EntityUtils.canBypassEntityLimit(entity)).count())));
+                } catch (Exception ignored) {
+                }
+            }
+
+            CompletableFuture<Boolean> completableFuture = new CompletableFuture<>();
+
+            Executor.async(() -> {
+                //Waiting for all the chunks to load
+                chunks.forEachCompleted(chunk -> {
+                }, error -> {
+                });
+                completableFuture.complete(amountOfEntities.get() + amount - 1 > entityLimit);
             });
-            completableFuture.complete(amountOfEntities.get() + amount - 1 > entityLimit);
-        });
 
-        return completableFuture;
+            return completableFuture;
+        }
     }
 
     @Override

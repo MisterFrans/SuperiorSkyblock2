@@ -722,3 +722,12 @@ public-warps: false
 # Timeout for the recalculate task, in seconds.
 # If you want to disable the timeout, set this to 0 or below.
 recalc-task-timeout: 10
+
+#The plugin will have a delay between 2 entity counts for the entity limit on the island to
+#avoid lags on big islands with mobs factories. Between counts, the plugin will check the number
+#of entities that will be created and killed on the island to evaluate the approximate number
+#on the island while waiting for the next count
+soft-limit:
+  enable: false
+#Minimum time in seconds between 2 complete checks of the number of entities on the island
+  delay: 10

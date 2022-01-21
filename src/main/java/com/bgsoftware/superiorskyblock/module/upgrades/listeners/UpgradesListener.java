@@ -17,12 +17,7 @@ import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.CreatureSpawner;
-import org.bukkit.entity.ArmorStand;
-import org.bukkit.entity.Entity;
-import org.bukkit.entity.Hanging;
-import org.bukkit.entity.LivingEntity;
-import org.bukkit.entity.Minecart;
-import org.bukkit.entity.Player;
+import org.bukkit.entity.*;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -33,6 +28,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.event.entity.SpawnerSpawnEvent;
+import org.bukkit.event.hanging.HangingBreakEvent;
 import org.bukkit.event.hanging.HangingPlaceEvent;
 import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -109,6 +105,8 @@ public final class UpgradesListener implements Listener {
 
         if (e.getEntity() instanceof Player)
             return;
+
+        island.removeEntityForSoftLimitCount(e.getEntityType());
 
         if (plugin.getSettings().isDropsUpgradePlayersMultiply()) {
             EntityDamageEvent lastDamage = e.getEntity().getLastDamageCause();
@@ -232,6 +230,7 @@ public final class UpgradesListener implements Listener {
         if (island == null)
             return;
 
+        island.removeEntityForSoftLimitCount(e.getVehicle().getType());
         island.handleBlockBreak(plugin.getNMSAlgorithms().getMinecartBlock((Minecart) e.getVehicle()), 1);
     }
 
@@ -321,15 +320,22 @@ public final class UpgradesListener implements Listener {
         if (!EntityUtils.canHaveLimit(e.getEntityType()))
             return;
 
+        //ITEM_FRAME and PAINTING trigger the HangingPlaceEvent and prevent double check
+        if(e.getEntityType().equals(EntityType.ITEM_FRAME) || e.getEntityType().equals(EntityType.PAINTING))
+        {
+            return;
+        }
+
         island.hasReachedEntityLimit(Key.of(e.getEntity())).whenComplete((result, ex) -> {
             if (result) {
-                if (ServerVersion.isAtLeast(ServerVersion.v1_17)) {
-                    Executor.ensureMain(() -> e.getEntity().remove());
-                } else {
+                Executor.sync(() -> {
                     e.getEntity().remove();
-                }
+                    island.removeEntityForSoftLimitCount(e.getEntityType());
+                });
             }
         });
+
+        island.addEntityForSoftLimitCount(e.getEntityType());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -343,12 +349,28 @@ public final class UpgradesListener implements Listener {
             return;
 
         island.hasReachedEntityLimit(Key.of(e.getEntity())).whenComplete((result, ex) -> {
-            if (result && e.getEntity().isValid() && !e.getEntity().isDead()) {
-                e.getEntity().remove();
-                if (e.getPlayer().getGameMode() != GameMode.CREATIVE)
-                    e.getPlayer().getInventory().addItem(asItemStack(e.getEntity()));
-            }
+            //Sync to avoid the isValid returning false because the entity is not yet created
+            Executor.sync(() -> {
+                if (result && e.getEntity().isValid() && !e.getEntity().isDead()) {
+                    island.removeEntityForSoftLimitCount(e.getEntity().getType());
+                    e.getEntity().remove();
+                    if (e.getPlayer().getGameMode() != GameMode.CREATIVE)
+                        e.getPlayer().getInventory().addItem(asItemStack(e.getEntity()));
+                }
+            });
         });
+
+        island.addEntityForSoftLimitCount(e.getEntity().getType());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onHangingBreak(HangingBreakEvent e) {
+        Island island = plugin.getGrid().getIslandAt(e.getEntity().getLocation());
+
+        if (island == null)
+            return;
+
+        island.removeEntityForSoftLimitCount(e.getEntity().getType());
     }
 
     @EventHandler
@@ -385,14 +407,18 @@ public final class UpgradesListener implements Listener {
             return;
 
         island.hasReachedEntityLimit(Key.of(e.getVehicle())).whenComplete((result, ex) -> {
-            if (result && e.getVehicle().isValid() && !e.getVehicle().isDead()) {
-                Executor.sync(() -> {
-                    e.getVehicle().remove();
-                    if (placedVehicle != null)
-                        Bukkit.getPlayer(placedVehicle).getInventory().addItem(asItemStack(e.getVehicle()));
-                });
-            }
+            Executor.sync(() -> {
+                if (result && e.getVehicle().isValid() && !e.getVehicle().isDead()) {
+                        island.removeEntityForSoftLimitCount(e.getVehicle().getType());
+                        e.getVehicle().remove();
+                        if (placedVehicle != null)
+                            Bukkit.getPlayer(placedVehicle).getInventory().addItem(asItemStack(e.getVehicle()));
+
+                }
+            });
         });
+
+        island.addEntityForSoftLimitCount(e.getVehicle().getType());
     }
 
     /*

@@ -543,6 +543,18 @@ public interface SettingsManager {
      */
     long getRecalcTaskTimeout();
 
+    /**
+     * Is soft limit activated for the entity limit per island
+     * Config-path: soft-limit.enable
+     */
+    boolean isSoftLimitEnabled();
+
+    /**
+     * Minimum time in seconds between 2 complete entity count on the island
+     * Config-path: soft-limit.countDelay
+     */
+    int getDelayBetweenCountWithSoftLimit();
+
 
     interface Database {
 

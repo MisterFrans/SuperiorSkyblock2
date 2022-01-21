@@ -513,6 +513,18 @@ public final class SettingsHandler extends AbstractHandler implements SettingsMa
         return this.container.recalcTaskTimeout;
     }
 
+    @Override
+    public boolean isSoftLimitEnabled()
+    {
+        return this.container.softLimit;
+    }
+
+    @Override
+    public int getDelayBetweenCountWithSoftLimit()
+    {
+        return this.container.softLimitCountDelay;
+    }
+
     public void updateValue(String path, Object value) throws IOException {
         SuperiorSkyblockPlugin plugin = SuperiorSkyblockPlugin.getPlugin();
         File file = new File(plugin.getDataFolder(), "config.yml");

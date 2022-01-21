@@ -1027,6 +1027,16 @@ public final class SpawnIsland implements Island {
     }
 
     @Override
+    public void addEntityForSoftLimitCount(EntityType entityType) {
+
+    }
+
+    @Override
+    public void removeEntityForSoftLimitCount(EntityType entityType) {
+
+    }
+
+    @Override
     public void clearEntitiesLimits() {
 
     }

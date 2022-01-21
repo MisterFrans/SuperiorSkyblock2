@@ -179,6 +179,8 @@ public final class SettingsContainer {
     public final double chargeOnWarp;
     public final boolean publicWarps;
     public final long recalcTaskTimeout;
+    public final boolean softLimit;
+    public final int softLimitCountDelay;
 
     public SettingsContainer(SuperiorSkyblockPlugin plugin, YamlConfiguration config) throws HandlerLoadException {
         databaseType = config.getString("database.type");
@@ -456,6 +458,8 @@ public final class SettingsContainer {
         chargeOnWarp = config.getDouble("charge-on-warp", 0D);
         publicWarps = config.getBoolean("public-warps");
         recalcTaskTimeout = config.getLong("recalc-task-timeout");
+        softLimit = config.getBoolean("soft-limit.enable");
+        softLimitCountDelay = config.getInt("soft-limit.delay");
     }
 
     private List<String> loadInteractables(SuperiorSkyblockPlugin plugin) {

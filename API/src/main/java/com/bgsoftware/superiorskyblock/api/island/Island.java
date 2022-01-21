@@ -1211,6 +1211,20 @@ public interface Island extends Comparable<Island>, IMissionsHolder {
     Map<Key, Integer> getCustomEntitiesLimits();
 
     /**
+     * Add one entity in the soft limit cache if enabled
+     *
+     * @param entityType The type of the entity to be added
+     */
+    void addEntityForSoftLimitCount(EntityType entityType);
+
+    /**
+     * Remove one entity of the soft limit cache if enabled
+     *
+     * @param entityType The type of the entity to be removed
+     */
+    void removeEntityForSoftLimitCount(EntityType entityType);
+
+    /**
      * Clear all the entities limits from the island.
      */
     void clearEntitiesLimits();
